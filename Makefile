@@ -2,7 +2,7 @@
 VERSION = 5
 PATCHLEVEL = 4
 SUBLEVEL = 0
-EXTRAVERSION =
+EXTRAVERSION = -ck1
 NAME = Kleptomaniac Octopus
 
 # *DOCUMENTATION*
@@ -14,6 +14,10 @@ NAME = Kleptomaniac Octopus
 # That's our default target when none is given on the command line
 PHONY := _all
 _all:
+
+# CKVERSION = -ck1
+# CKNAME = MuQSS Powered
+# EXTRAVERSION := $(EXTRAVERSION)$(CKVERSION)
 
 # We are using a recursive build, so we need to do a little thinking
 # to get the ordering right.
