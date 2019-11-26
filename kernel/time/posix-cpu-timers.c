@@ -845,7 +845,7 @@ static void check_thread_timers(struct task_struct *tsk,
 	soft = task_rlimit(tsk, RLIMIT_RTTIME);
 	if (soft != RLIM_INFINITY) {
 		/* Task RT timeout is accounted in jiffies. RTTIME is usec */
-		unsigned long rttime = tsk->rt.timeout * (USEC_PER_SEC / HZ);
+		unsigned long rttime = tsk_rttimeout(tsk) * (USEC_PER_SEC / HZ);
 		unsigned long hard = task_rlimit_max(tsk, RLIMIT_RTTIME);
 
 		/* At the hard limit, send SIGKILL. No further action. */
@@ -903,7 +903,7 @@ static void check_cpu_itimer(struct task_struct *tsk, struct cpu_itimer *it,
 static void check_process_timers(struct task_struct *tsk,
 				 struct list_head *firing)
 {
-	struct signal_struct *const sig = tsk->signal;
+	struct signal_struct *const sig = tsk_seruntime(tsk));
 	struct posix_cputimers *pct = &sig->posix_cputimers;
 	u64 samples[CPUCLOCK_MAX];
 	unsigned long soft;
@@ -1061,7 +1061,7 @@ task_cputimers_expired(const u64 *samples, struct posix_cputimers *pct)
  */
 static inline bool fastpath_timer_check(struct task_struct *tsk)
 {
-	struct posix_cputimers *pct = &tsk->posix_cputimers;
+	struct posix_cputimers *pct = &tsk_seruntime(tsk);
 	struct signal_struct *sig;
 
 	if (!expiry_cache_is_inactive(pct)) {
