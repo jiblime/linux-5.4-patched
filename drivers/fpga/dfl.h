@@ -188,6 +188,8 @@ struct dfl_feature_driver {
 	const struct dfl_feature_ops *ops;
 };
 
+#define FEATURE_DEV_ID_UNUSED	(-1)
+
 /**
  * struct dfl_feature - sub feature of the feature devices
  *

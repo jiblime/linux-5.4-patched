@@ -299,6 +299,21 @@ static bool dfl_feature_drv_match(struct dfl_feature *feature,
 	return false;
 }
 
+static bool dfl_feature_drv_match(struct dfl_feature *feature,
+				  struct dfl_feature_driver *driver)
+{
+	const struct dfl_feature_id *ids = driver->id_table;
+
+	if (ids) {
+		while (ids->id) {
+			if (ids->id == feature->id)
+				return true;
+			ids++;
+		}
+	}
+	return false;
+}
+
 /**
  * dfl_fpga_dev_feature_init - init for sub features of dfl feature device
  * @pdev: feature device.
@@ -1065,6 +1080,170 @@ static int __init dfl_fpga_init(void)
 
 	return ret;
 }
+
+/**
+ * dfl_fpga_cdev_release_port - release a port platform device
+ *
+ * @cdev: parent container device.
+ * @port_id: id of the port platform device.
+ *
+ * This function allows user to release a port platform device. This is a
+ * mandatory step before turn a port from PF into VF for SRIOV support.
+ *
+ * Return: 0 on success, negative error code otherwise.
+ */
+int dfl_fpga_cdev_release_port(struct dfl_fpga_cdev *cdev, int port_id)
+{
+	struct platform_device *port_pdev;
+	int ret = -ENODEV;
+
+	mutex_lock(&cdev->lock);
+	port_pdev = __dfl_fpga_cdev_find_port(cdev, &port_id,
+					      dfl_fpga_check_port_id);
+	if (!port_pdev)
+		goto unlock_exit;
+
+	if (!device_is_registered(&port_pdev->dev)) {
+		ret = -EBUSY;
+		goto put_dev_exit;
+	}
+
+	ret = dfl_feature_dev_use_begin(dev_get_platdata(&port_pdev->dev));
+	if (ret)
+		goto put_dev_exit;
+
+	platform_device_del(port_pdev);
+	cdev->released_port_num++;
+put_dev_exit:
+	put_device(&port_pdev->dev);
+unlock_exit:
+	mutex_unlock(&cdev->lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(dfl_fpga_cdev_release_port);
+
+/**
+ * dfl_fpga_cdev_assign_port - assign a port platform device back
+ *
+ * @cdev: parent container device.
+ * @port_id: id of the port platform device.
+ *
+ * This function allows user to assign a port platform device back. This is
+ * a mandatory step after disable SRIOV support.
+ *
+ * Return: 0 on success, negative error code otherwise.
+ */
+int dfl_fpga_cdev_assign_port(struct dfl_fpga_cdev *cdev, int port_id)
+{
+	struct platform_device *port_pdev;
+	int ret = -ENODEV;
+
+	mutex_lock(&cdev->lock);
+	port_pdev = __dfl_fpga_cdev_find_port(cdev, &port_id,
+					      dfl_fpga_check_port_id);
+	if (!port_pdev)
+		goto unlock_exit;
+
+	if (device_is_registered(&port_pdev->dev)) {
+		ret = -EBUSY;
+		goto put_dev_exit;
+	}
+
+	ret = platform_device_add(port_pdev);
+	if (ret)
+		goto put_dev_exit;
+
+	dfl_feature_dev_use_end(dev_get_platdata(&port_pdev->dev));
+	cdev->released_port_num--;
+put_dev_exit:
+	put_device(&port_pdev->dev);
+unlock_exit:
+	mutex_unlock(&cdev->lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(dfl_fpga_cdev_assign_port);
+
+static void config_port_access_mode(struct device *fme_dev, int port_id,
+				    bool is_vf)
+{
+	void __iomem *base;
+	u64 v;
+
+	base = dfl_get_feature_ioaddr_by_id(fme_dev, FME_FEATURE_ID_HEADER);
+
+	v = readq(base + FME_HDR_PORT_OFST(port_id));
+
+	v &= ~FME_PORT_OFST_ACC_CTRL;
+	v |= FIELD_PREP(FME_PORT_OFST_ACC_CTRL,
+			is_vf ? FME_PORT_OFST_ACC_VF : FME_PORT_OFST_ACC_PF);
+
+	writeq(v, base + FME_HDR_PORT_OFST(port_id));
+}
+
+#define config_port_vf_mode(dev, id) config_port_access_mode(dev, id, true)
+#define config_port_pf_mode(dev, id) config_port_access_mode(dev, id, false)
+
+/**
+ * dfl_fpga_cdev_config_ports_pf - configure ports to PF access mode
+ *
+ * @cdev: parent container device.
+ *
+ * This function is needed in sriov configuration routine. It could be used to
+ * configure the all released ports from VF access mode to PF.
+ */
+void dfl_fpga_cdev_config_ports_pf(struct dfl_fpga_cdev *cdev)
+{
+	struct dfl_feature_platform_data *pdata;
+
+	mutex_lock(&cdev->lock);
+	list_for_each_entry(pdata, &cdev->port_dev_list, node) {
+		if (device_is_registered(&pdata->dev->dev))
+			continue;
+
+		config_port_pf_mode(cdev->fme_dev, pdata->id);
+	}
+	mutex_unlock(&cdev->lock);
+}
+EXPORT_SYMBOL_GPL(dfl_fpga_cdev_config_ports_pf);
+
+/**
+ * dfl_fpga_cdev_config_ports_vf - configure ports to VF access mode
+ *
+ * @cdev: parent container device.
+ * @num_vfs: VF device number.
+ *
+ * This function is needed in sriov configuration routine. It could be used to
+ * configure the released ports from PF access mode to VF.
+ *
+ * Return: 0 on success, negative error code otherwise.
+ */
+int dfl_fpga_cdev_config_ports_vf(struct dfl_fpga_cdev *cdev, int num_vfs)
+{
+	struct dfl_feature_platform_data *pdata;
+	int ret = 0;
+
+	mutex_lock(&cdev->lock);
+	/*
+	 * can't turn multiple ports into 1 VF device, only 1 port for 1 VF
+	 * device, so if released port number doesn't match VF device number,
+	 * then reject the request with -EINVAL error code.
+	 */
+	if (cdev->released_port_num != num_vfs) {
+		ret = -EINVAL;
+		goto done;
+	}
+
+	list_for_each_entry(pdata, &cdev->port_dev_list, node) {
+		if (device_is_registered(&pdata->dev->dev))
+			continue;
+
+		config_port_vf_mode(cdev->fme_dev, pdata->id);
+	}
+done:
+	mutex_unlock(&cdev->lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(dfl_fpga_cdev_config_ports_vf);
 
 /**
  * dfl_fpga_cdev_release_port - release a port platform device

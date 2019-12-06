@@ -177,6 +177,11 @@ static const struct dfl_feature_id fme_hdr_id_table[] = {
 	{0,}
 };
 
+static const struct dfl_feature_id fme_hdr_id_table[] = {
+	{.id = FME_FEATURE_ID_HEADER,},
+	{0,}
+};
+
 static const struct dfl_feature_ops fme_hdr_ops = {
 	.ioctl = fme_hdr_ioctl,
 };

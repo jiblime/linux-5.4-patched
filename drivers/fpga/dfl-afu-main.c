@@ -434,6 +434,11 @@ static const struct dfl_feature_id port_hdr_id_table[] = {
 	{0,}
 };
 
+static const struct dfl_feature_id port_hdr_id_table[] = {
+	{.id = PORT_FEATURE_ID_HEADER,},
+	{0,}
+};
+
 static const struct dfl_feature_ops port_hdr_ops = {
 	.init = port_hdr_init,
 	.ioctl = port_hdr_ioctl,
@@ -498,6 +503,11 @@ static int port_afu_init(struct platform_device *pdev,
 				   DFL_PORT_REGION_MMAP | DFL_PORT_REGION_READ |
 				   DFL_PORT_REGION_WRITE);
 }
+
+static const struct dfl_feature_id port_afu_id_table[] = {
+	{.id = PORT_FEATURE_ID_AFU,},
+	{0,}
+};
 
 static const struct dfl_feature_id port_afu_id_table[] = {
 	{.id = PORT_FEATURE_ID_AFU,},

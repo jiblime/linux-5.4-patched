@@ -110,6 +110,9 @@ extern int core_uses_pid;
 extern char core_pattern[];
 extern unsigned int core_pipe_limit;
 #endif
+#ifdef CONFIG_USER_NS
+extern int unprivileged_userns_clone;
+#endif
 extern int pid_max;
 extern int pid_max_min, pid_max_max;
 extern int percpu_pagelist_fraction;
@@ -132,6 +135,10 @@ static unsigned long one_ul = 1;
 static unsigned long long_max = LONG_MAX;
 static int one_hundred = 100;
 static int one_thousand = 1000;
+#ifdef CONFIG_SCHED_BMQ
+static int __maybe_unused zero = 0;
+extern int sched_yield_type;
+#endif
 #ifdef CONFIG_PRINTK
 static int ten_thousand = 10000;
 #endif
@@ -300,7 +307,7 @@ static struct ctl_table sysctl_base_table[] = {
 	{ }
 };
 
-#ifdef CONFIG_SCHED_DEBUG
+#if defined(CONFIG_SCHED_DEBUG) && !defined(CONFIG_SCHED_BMQ)
 static int min_sched_granularity_ns = 100000;		/* 100 usecs */
 static int max_sched_granularity_ns = NSEC_PER_SEC;	/* 1 second */
 static int min_wakeup_granularity_ns;			/* 0 usecs */
@@ -317,6 +324,7 @@ static int max_extfrag_threshold = 1000;
 #endif
 
 static struct ctl_table kern_table[] = {
+#ifndef CONFIG_SCHED_BMQ
 	{
 		.procname	= "sched_child_runs_first",
 		.data		= &sysctl_sched_child_runs_first,
@@ -498,6 +506,7 @@ static struct ctl_table kern_table[] = {
 		.extra2		= SYSCTL_ONE,
 	},
 #endif
+#endif /* !CONFIG_SCHED_BMQ */
 #ifdef CONFIG_PROVE_LOCKING
 	{
 		.procname	= "prove_locking",
@@ -542,6 +551,15 @@ static struct ctl_table kern_table[] = {
 		.procname	= "core_pipe_limit",
 		.data		= &core_pipe_limit,
 		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+#endif
+#ifdef CONFIG_USER_NS
+	{
+		.procname	= "unprivileged_userns_clone",
+		.data		= &unprivileged_userns_clone,
+		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
@@ -1068,6 +1086,17 @@ static struct ctl_table kern_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
+	},
+#endif
+#ifdef CONFIG_SCHED_BMQ
+	{
+		.procname	= "yield_type",
+		.data		= &sched_yield_type,
+		.maxlen		= sizeof (int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &two,
 	},
 #endif
 #if defined(CONFIG_S390) && defined(CONFIG_SMP)

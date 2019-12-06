@@ -24,7 +24,7 @@ BEGIN {
 	going = 0
 }
 
-/^\s*[0-9a-fA-F]+\:/ {
+/^\s*[0-9a-fA-F]+:/ {
 	if (going) {
 		colon_pos = index($0, ":")
 		useful_line = substr($0, colon_pos + 1)
